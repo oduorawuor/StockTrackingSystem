@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:stock_tracking_app/src/features/dashboard/presentation/widgets/sidebar.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:math';
 
 class ManageUsersScreen extends StatelessWidget {
   const ManageUsersScreen({super.key});
@@ -51,7 +52,7 @@ class ManageUsersScreen extends StatelessWidget {
           itemBuilder: (context, index) {
             var user = users[index];
             String id = user.id;
-            String name = user['name'];
+            String name = user['email'];
             String email = user['email'];
             String role = user['role'];
 
@@ -107,7 +108,9 @@ class ManageUsersScreen extends StatelessWidget {
                 items: ['admin', 'manager', 'sales']
                     .map((role) => DropdownMenuItem(value: role, child: Text(role.toUpperCase())))
                     .toList(),
-                onChanged: (value) => selectedRole = value!,
+                onChanged: (value) {
+                  if (value != null) selectedRole = value;
+                },
                 decoration: const InputDecoration(labelText: 'Role'),
               ),
             ],
@@ -124,6 +127,12 @@ class ManageUsersScreen extends StatelessWidget {
     );
   }
 
+  // 🔹 Function to generate a random password
+  String _generateRandomPassword() {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#\$%^&*';
+    return List.generate(10, (index) => chars[Random().nextInt(chars.length)]).join();
+  }
+
   // 🔹 Function to add or update user
   void _saveUser(String? id, String name, String email, String role, BuildContext context) async {
     if (name.isEmpty || email.isEmpty) {
@@ -135,15 +144,25 @@ class ManageUsersScreen extends StatelessWidget {
 
     try {
       if (id == null) {
+        // Check if email already exists
+        var existingUsers = await usersRef.where('email', isEqualTo: email).get();
+        if (existingUsers.docs.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email already exists')));
+          return;
+        }
+
+        // Generate a secure password
+        String password = _generateRandomPassword();
+
         // Create user in Firebase Authentication
         UserCredential credentials = await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: email,
-          password: 'default123', // Default password (should be changed later)
+          password: password,
         );
 
         String uid = credentials.user!.uid;
 
-        // Add user to Firestore with UID as document ID
+        // Add user to Firestore
         await usersRef.doc(uid).set({
           'name': name,
           'email': email,
@@ -151,7 +170,10 @@ class ManageUsersScreen extends StatelessWidget {
           'uid': uid,
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User added successfully')));
+        // Send password reset email
+        await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User added successfully. A reset email has been sent.')));
       } else {
         // Update existing user
         await usersRef.doc(id).update({'name': name, 'email': email, 'role': role});
@@ -164,19 +186,11 @@ class ManageUsersScreen extends StatelessWidget {
     Navigator.pop(context);
   }
 
-  // 🔹 Function to delete user from Firestore and Firebase Authentication
+  // 🔹 Function to delete user from Firestore (Firebase Auth deletion requires Admin SDK)
   void _deleteUser(String id, BuildContext context) async {
     try {
-      // Delete from Firestore
       await FirebaseFirestore.instance.collection('users').doc(id).delete();
-
-      // Delete from Firebase Authentication
-      User? user = FirebaseAuth.instance.currentUser;
-      if (user != null && user.uid == id) {
-        await user.delete();
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User deleted successfully')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User deleted from Firestore.')));
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     }

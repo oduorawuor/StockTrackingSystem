@@ -27,24 +27,56 @@ class AdminDashboard extends StatelessWidget {
     );
   }
 
+  // 🔹 Fetch and display key statistics for the admin from multiple collections
   Widget _buildStatsGrid() {
     return FutureBuilder(
-      future: FirebaseFirestore.instance.collection('stats').get(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const CircularProgressIndicator();
-        var stats = snapshot.data!.docs.first.data();
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      future: Future.wait([
+        FirebaseFirestore.instance.collection('sales').get(),  // Fetch all sales documents
+        FirebaseFirestore.instance.collection('users').get(),  // Fetch all users documents
+        FirebaseFirestore.instance.collection('stock').get(),  // Fetch all stock documents
+      ]),
+      builder: (context, AsyncSnapshot<List<QuerySnapshot>> snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError || snapshot.data == null) {
+          return const Center(child: Text('Error loading data'));
+        }
+
+        // Extract data from each collection
+        var salesDocs = snapshot.data![0].docs;
+        var usersDocs = snapshot.data![1].docs;
+        var stockDocs = snapshot.data![2].docs;
+
+        // Process the data from each collection to get the required stats
+        int totalSales = salesDocs.length;  // Example: Count total sales documents
+        int totalUsers = usersDocs.length;  // Example: Count total users documents
+        int totalStockItems = stockDocs.length;  // Example: Count total stock documents
+
+        return Column(
           children: [
-            StatsCard(title: 'Total Sales', value: stats['totalSales'].toString(), icon: Icons.bar_chart),
-            StatsCard(title: 'Stock Items', value: stats['totalStockItems'].toString(), icon: Icons.inventory),
-            StatsCard(title: 'Users', value: stats['totalUsers'].toString(), icon: Icons.people),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                StatsCard(title: 'Total Sales', value: totalSales.toString(), icon: Icons.bar_chart),
+                StatsCard(title: 'Total Revenue', value: 'KES\${totalSales * 100}', icon: Icons.monetization_on), // Example revenue calculation
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                StatsCard(title: 'Total Users', value: totalUsers.toString(), icon: Icons.people),
+                StatsCard(title: 'Stock Items', value: totalStockItems.toString(), icon: Icons.inventory),
+              ],
+            ),
           ],
         );
       },
     );
   }
 
+  // 🔹 Fetch and display recent activities
   Widget _buildRecentActivities() {
     return Container(
       height: 200,
@@ -55,7 +87,11 @@ class AdminDashboard extends StatelessWidget {
         boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.3), blurRadius: 5)],
       ),
       child: StreamBuilder(
-        stream: FirebaseFirestore.instance.collection('activities').orderBy('timestamp', descending: true).limit(5).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('activities')
+            .orderBy('timestamp', descending: true)
+            .limit(5)
+            .snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
           var docs = snapshot.data!.docs;

@@ -10,27 +10,40 @@ class SalesScreen extends StatefulWidget {
 }
 
 class _SalesScreenState extends State<SalesScreen> {
-  Map<String, int> cart = {}; // Stores selected products and their quantities
+  Map<String, Map<String, dynamic>> cart = {}; // Stores products with name, price, and quantity
   bool _isProcessing = false;
 
   // Function to add a product to the cart
-  void _addToCart(String productName) {
+  void _addToCart(String productId, String name, double price) {
     setState(() {
-      cart[productName] = (cart[productName] ?? 0) + 1;
+      if (cart.containsKey(name)) {
+        cart[name]!['quantity'] += 1;
+      } else {
+        cart[name] = {'quantity': 1, 'price': price};
+      }
     });
   }
 
   // Function to remove a product from the cart
-  void _removeFromCart(String productName) {
+  void _removeFromCart(String name) {
     setState(() {
-      if (cart.containsKey(productName)) {
-        if (cart[productName]! > 1) {
-          cart[productName] = cart[productName]! - 1;
+      if (cart.containsKey(name)) {
+        if (cart[name]!['quantity'] > 1) {
+          cart[name]!['quantity'] -= 1;
         } else {
-          cart.remove(productName);
+          cart.remove(name);
         }
       }
     });
+  }
+
+  // Function to calculate total price
+  double _calculateTotal() {
+    double total = 0.0;
+    for (var item in cart.values) {
+      total += item['quantity'] * item['price'];
+    }
+    return total;
   }
 
   // Function to process checkout
@@ -45,25 +58,30 @@ class _SalesScreenState extends State<SalesScreen> {
 
     try {
       for (var entry in cart.entries) {
-        String product = entry.key;
-        int quantity = entry.value;
+        String productName = entry.key;
+        int quantity = entry.value['quantity'];
 
-        var stockRef = FirebaseFirestore.instance.collection('stock').doc(product);
+        var stockRef = FirebaseFirestore.instance
+            .collection('stock')
+            .where('name', isEqualTo: productName);
         var stockSnapshot = await stockRef.get();
 
-        if (!stockSnapshot.exists || stockSnapshot['quantity'] < quantity) {
+        if (stockSnapshot.docs.isEmpty || stockSnapshot.docs.first['quantity'] < quantity) {
           ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Not enough stock for $product')));
+              SnackBar(content: Text('Not enough stock for $productName')));
           continue;
         }
 
+        var stockDoc = stockSnapshot.docs.first.reference;
+
         // Reduce stock quantity
-        await stockRef.update({'quantity': stockSnapshot['quantity'] - quantity});
+        await stockDoc.update({'quantity': stockSnapshot.docs.first['quantity'] - quantity});
 
         // Log the sale
         await FirebaseFirestore.instance.collection('sales').add({
-          'product': product,
+          'product': productName,
           'quantity': quantity,
+          'total_price': entry.value['quantity'] * entry.value['price'],
           'timestamp': FieldValue.serverTimestamp(),
         });
       }
@@ -107,14 +125,16 @@ class _SalesScreenState extends State<SalesScreen> {
                     itemCount: products.length,
                     itemBuilder: (context, index) {
                       var product = products[index];
-                      String productName = product.id;
+                      String productId = product.id;
+                      String name = product['name'];
                       int stock = product['quantity'];
+                      double price = (product['price'] as num).toDouble();
 
                       return ListTile(
-                        title: Text(productName),
-                        subtitle: Text('Stock: $stock'),
+                        title: Text(name),
+                        subtitle: Text('Stock: $stock | Price: Ksh $price'),
                         trailing: ElevatedButton(
-                          onPressed: stock > 0 ? () => _addToCart(productName) : null,
+                          onPressed: stock > 0 ? () => _addToCart(productId, name, price) : null,
                           child: const Text('Add to Cart'),
                         ),
                       );
@@ -133,25 +153,37 @@ class _SalesScreenState extends State<SalesScreen> {
                   ? const Center(child: Text('No items in cart'))
                   : ListView(
                       children: cart.entries.map((entry) {
+                        String name = entry.key;
+                        int quantity = entry.value['quantity'];
+                        double price = entry.value['price'];
+
                         return ListTile(
-                          title: Text(entry.key),
-                          subtitle: Text('Quantity: ${entry.value}'),
+                          title: Text(name),
+                          subtitle: Text('Quantity: $quantity | Price: Ksh $price'),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.remove_circle, color: Colors.red),
-                                onPressed: () => _removeFromCart(entry.key),
+                                onPressed: () => _removeFromCart(name),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.add_circle, color: Colors.green),
-                                onPressed: () => _addToCart(entry.key),
+                                onPressed: () => _addToCart(name, name, price),
                               ),
                             ],
                           ),
                         );
                       }).toList(),
                     ),
+            ),
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10.0),
+              child: Text(
+                'Total: Ksh ${_calculateTotal().toStringAsFixed(2)}',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
             ),
             ElevatedButton(
               onPressed: _isProcessing ? null : _checkout,

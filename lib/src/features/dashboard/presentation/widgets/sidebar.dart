@@ -64,7 +64,6 @@ class Sidebar extends StatelessWidget {
           {'title': 'Dashboard', 'icon': Icons.dashboard, 'route': '/admin_dashboard'},
           {'title': 'Manage Users', 'icon': Icons.people, 'route': '/manage_users'},
           {'title': 'Stock', 'icon': Icons.inventory, 'route': '/stock'},
-          {'title': 'Sales History', 'icon': Icons.show_chart, 'route': '/sales_history'},
           {'title': 'Logout', 'icon': Icons.logout, 'route': '/login'},
         ];
       case 'manager':
